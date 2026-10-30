@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+Thumbs.db
+
+# Build / Xcode
+build/
+DerivedData/
+*.xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
