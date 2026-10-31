@@ -76,6 +76,7 @@ final class CloseQuitManager {
         let result = AXUIElementCopyElementAtPosition(system, Float(location.x), Float(location.y), &element)
         guard result == .success, let el = element else { return }
         guard isCloseButton(el) else { return }
+        guard let clickedWindow = containingWindow(of: el) else { return }
 
         var pid: pid_t = 0
         guard AXUIElementGetPid(el, &pid) == .success else { return }
@@ -84,9 +85,29 @@ final class CloseQuitManager {
         if let app = NSRunningApplication(processIdentifier: pid),
            app.bundleIdentifier == "com.apple.finder" { return }
 
+        // Only act on the app's main window; auxiliary windows (Quick Look
+        // previews, panels, popovers, ...) must just close normally.
+        let appElement = AXUIElementCreateApplication(pid)
+        var mainWindowRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWindowRef) == .success,
+           let mainWindow = mainWindowRef {
+            if !CFEqual(mainWindow, clickedWindow) { return }
+        }
+
+        // Only quit when this is the app's last window.
+        if windowCount(for: pid) > 1 { return }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             NSRunningApplication(processIdentifier: pid)?.terminate()
         }
+    }
+
+    nonisolated static func windowCount(for pid: pid_t) -> Int {
+        let app = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement] else { return 0 }
+        return windows.count
     }
 
     nonisolated static func containingWindow(of element: AXUIElement) -> AXUIElement? {
