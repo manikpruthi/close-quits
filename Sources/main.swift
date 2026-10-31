@@ -9,9 +9,12 @@ final class CloseQuitManager {
     private(set) var enabled = false
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private let defaults = UserDefaults.standard
+    private let enabledKey = "closeQuitsEnabled"
 
     func setEnabled(_ value: Bool) {
         enabled = value
+        defaults.set(value, forKey: enabledKey)
         if value {
             startTap()
         } else {
@@ -21,7 +24,10 @@ final class CloseQuitManager {
 
     func startIfTrusted() {
         if AXIsProcessTrusted() {
-            setEnabled(true)
+            let stored = defaults.object(forKey: enabledKey) as? Bool
+            setEnabled(stored ?? true)
+        } else {
+            fputs("DEBUG not trusted\n", stderr)
         }
     }
 
@@ -131,8 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: "CloseQuits")
         }
-        rebuildMenu()
         CloseQuitManager.shared.startIfTrusted()
+        rebuildMenu()
     }
 
     func rebuildMenu() {
