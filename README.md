@@ -13,6 +13,8 @@ just closing its window — because the minimize (yellow) button already exists 
 - **Menu-bar only** — runs as an `LSUIElement` with no Dock icon and a negligible footprint.
 - **Enable/disable** — toggle the behavior from the menu bar icon at any time.
 - **Finder-safe** — Finder is excluded so the desktop/icons are never killed.
+- **QuickShare-Mac-safe** — QuickShare-Mac (`tools.macexplorer.quickshare`) is excluded so its Send
+  window (transfers, PIN confirmation, QR wake) always closes normally instead of quitting the app.
 - **Universal binary** — Apple Silicon and Intel, macOS 13 or later.
 - **No third-party dependencies** — pure AppKit/ApplicationServices, ad-hoc signed.
 

@@ -85,6 +85,11 @@ final class CloseQuitManager {
         if let app = NSRunningApplication(processIdentifier: pid),
            app.bundleIdentifier == "com.apple.finder" { return }
 
+        // QuickShare-Mac owns its Send window lifecycle (transfers, PIN
+        // confirmation, QR wake); never quit it on close.
+        if let app = NSRunningApplication(processIdentifier: pid),
+           app.bundleIdentifier == "tools.macexplorer.quickshare" { return }
+
         // Only act on the app's main window; auxiliary windows (Quick Look
         // previews, panels, popovers, ...) must just close normally.
         let appElement = AXUIElementCreateApplication(pid)
