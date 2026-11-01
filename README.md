@@ -92,6 +92,15 @@ close-quits/
 └── README.md
 ```
 
+Not affiliated with Apple. macOS is a trademark of Apple Inc.
+
+## Provenance
+
+CloseQuits is an **original project, not a fork**. Its source was written from scratch for this
+repository. The close-to-quit behavior is inspired by the Windows title-bar convention (the × quits
+the app) and by macOS utilities that remap the red close button; no upstream source code, assets, or
+licenses were copied.
+
 ## License
 
-MIT — see [LICENSE](./LICENSE). (Add a LICENSE file before publishing.)
+MIT — see [LICENSE](./LICENSE).
