@@ -9,6 +9,11 @@ just closing its window — because the minimize (yellow) button already exists 
 
 - **Quit on close** — clicking the red × on an app's last window quits the app (`terminate()`), so
   unsaved-changes prompts still appear as usual.
+- **Fully quit, nothing left in the background** — if the app hasn't exited 5 s later and isn't
+  showing any window (such as a quit confirmation), it is force-quit. Then everything it left
+  behind is terminated: helpers, agents and XPC services inside its `.app` bundle, and background
+  processes it spawned elsewhere (e.g. a `git fsmonitor--daemon` started by an editor) that would
+  otherwise keep its Dock icon showing as running in the background.
 - **Only when the window really closed** — the app is quit only after the click finishes and its
   last window is actually gone. Dragging off the button, cancelling a "Save?" sheet, or closing one
   of several windows leaves the app running.
@@ -90,11 +95,35 @@ quit-on-close is not active (disabled or no Accessibility access).
   candidate only if it has the `AXCloseButton` subrole (or is a button equal to its window's
   `kAXCloseButtonAttribute`), belongs to the app's main window, the app isn't excluded (Finder,
   QuickShare-Mac), and that is the app's only window.
-- On mouse-up, the app's windows are polled for up to 1.5 s. Once it has no windows left — counted
-  via the Accessibility windows list plus `CGWindowListCopyWindowInfo` for windows on other Spaces
-  (using private SkyLight calls to count only windows on a Space no display is showing, so hidden
-  windows that apps like Activity Monitor keep after closing are ignored; AX only if unavailable) —
-  the app is sent `terminate()`. If the window is still there, nothing happens.
+- On mouse-up, the app's windows are polled for up to 1.5 s. A window counts as open if it is on
+  screen over a display, minimized (AX `kAXMinimizedAttribute`), or on a Space no display is
+  showing (`CGWindowListCopyWindowInfo` plus private SkyLight calls; without them only the first
+  two count). Hidden windows that apps keep after "closing" them — ordered out or parked
+  off-screen, as Activity Monitor does — are ignored even if the app still lists them over AX.
+  With Stage Manager on, such hidden windows still show as thumbnails in the strip (CG reports the
+  app's window at the thumbnail's frame, under a matching `WindowManager` frame); a strip window
+  only counts if Accessibility lists an open window for it other than the one whose × was
+  clicked, i.e. a real window in another stage.
+- Apps that hide their window instead of closing it may keep listing it over Accessibility, so
+  the window whose × was clicked is never counted once it is off the display — both when deciding
+  to quit and when deciding to force-quit.
+- Decisions are logged (quit / force-quit / leftover-process kills at notice level, which is kept
+  on disk; window counts at debug level):
+  `log show --last 10m --debug --predicate 'subsystem == "com.manikpruthi.closequits"'`.
+  Once nothing is open, the app is sent `terminate()`. If the window is still there, nothing
+  happens.
+- After `terminate()`, the app is checked every 0.5 s. If it is still running after 5 s and shows
+  no window, it gets `forceTerminate()`. Once it is gone, its leftovers get `SIGTERM`, then
+  `SIGKILL` 2 s later:
+  - every process whose executable lives inside its `.app` bundle (`proc_pidpath`), and
+  - every process still in the app's resource coalition (`proc_pidinfo(PROC_PIDCOALITIONINFO)`,
+    read while the app is alive). Detached children stay in it, and while any live,
+    LaunchServices marks the app `exited-with-subordinates` and the Dock keeps its icon.
+    Coalition members with a controlling terminal (your own shell jobs in an app that hosts
+    terminals) are spared, and the sweep is skipped entirely if another user-facing app shares
+    the coalition (apps started straight from a shell share the terminal's). Background-only
+    members — XPC services macOS runs for the app, Electron `Helper.app`s — don't count as sharing
+    and are swept with it.
 - Accessibility trust is re-checked every 2 s; the tap starts/stops accordingly and is recreated if
   macOS invalidates it.
 
@@ -103,6 +132,12 @@ quit-on-close is not active (disabled or no Accessibility access).
 - A close that completes later than 1.5 s after the click (e.g. after answering a "Save?" sheet)
   leaves the app running.
 - Minimized windows on another Space may not be counted.
+- An app that takes longer than 5 s to quit with no window showing (e.g. a long silent save on
+  quit) is force-quit.
+- Agents launchd runs on its own (installed to `~/Library/LaunchAgents` or `/Library`) are not in
+  the app's coalition and are not stopped; launchd may also restart agents marked keep-alive.
+- Processes left behind by an earlier instance of the app (not the one quit through CloseQuits)
+  are in that instance's coalition and are not swept.
 
 ## Project layout
 
