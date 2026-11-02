@@ -7,9 +7,17 @@ just closing its window — because the minimize (yellow) button already exists 
 
 ## Features
 
-- **Quit on close** — clicking any app's red × sends `terminate()` to that app, so it actually quits.
-- **System-wide** — works across all apps via a low-level event tap + Accessibility, including apps
-  with custom title bars (falls back to a "close" title/description match).
+- **Quit on close** — clicking the red × on an app's last window quits the app (`terminate()`), so
+  unsaved-changes prompts still appear as usual.
+- **Only when the window really closed** — the app is quit only after the click finishes and its
+  last window is actually gone. Dragging off the button, cancelling a "Save?" sheet, or closing one
+  of several windows leaves the app running.
+- **Auxiliary windows close normally** — Quick Look previews, panels and other non-main windows are
+  never treated as a quit.
+- **Spaces-aware** — windows open on other desktops count, so an app is not quit while it still has
+  a window on another Space.
+- **System-wide, zero input lag** — a listen-only event tap feeds a background Accessibility check,
+  so clicks are never delayed, even when the app under the cursor is hung.
 - **Menu-bar only** — runs as an `LSUIElement` with no Dock icon and a negligible footprint.
 - **Enable/disable** — toggle the behavior from the menu bar icon at any time.
 - **Finder-safe** — Finder is excluded so the desktop/icons are never killed.
@@ -28,7 +36,7 @@ just closing its window — because the minimize (yellow) button already exists 
 
 ### Option 1: DMG (easiest)
 
-1. Open `release/CloseQuits-1.0.0.dmg`
+1. Open `release/CloseQuits-1.1.0.dmg`
 2. Drag **CloseQuits.app** into **Applications**
 3. Open it from Applications (right-click → **Open** the first time, since the build is ad-hoc signed)
 
@@ -51,31 +59,49 @@ open "/Applications/CloseQuits.app"
 CloseQuits needs **Accessibility** access to read the UI element under the cursor and create the
 event tap:
 
-1. Open the menu-bar icon → **Grant Accessibility Access…** (jumps straight to the right pane), or
-   go to **System Settings → Privacy & Security → Accessibility**.
+1. Open the menu-bar icon → **Grant Accessibility Access…** (shows the system prompt with an
+   **Open System Settings** button), or go to **System Settings → Privacy & Security →
+   Accessibility**.
 2. Enable **CloseQuits**.
-3. The menu-bar icon updates to *Accessibility: Granted* and the tap starts automatically — no
-   relaunch needed.
+3. Within ~2 seconds the menu shows *Accessibility: Granted* and the tap starts — no relaunch
+   needed. Revoking access stops the tap the same way.
+
+> **After updating or rebuilding:** the app is ad-hoc signed, so every new build has a different
+> signature and macOS silently stops trusting it, even though the switch in Settings still looks
+> on. Remove CloseQuits from the Accessibility list (−) and add it again.
 
 ## Usage
 
 | Action | How |
 | --- | --- |
 | Quit an app by closing it | Click the red × on any window |
-| Enable / disable | Menu bar icon → **Enable/Disable Quit-on-Close** |
+| Enable / disable | Menu bar icon → **Quit on Close** (checkmark = on; greyed out until Accessibility is granted) |
 | Check permission status | Menu bar icon shows *Accessibility: Granted* or *Grant Accessibility Access…* |
 | Quit CloseQuits | Menu bar icon → **Quit CloseQuits** (or `⌘Q` with menu open) |
 
-Minimize (yellow) and zoom (green) keep their normal behavior.
+Minimize (yellow) and zoom (green) keep their normal behavior. The menu-bar icon is dimmed whenever
+quit-on-close is not active (disabled or no Accessibility access).
 
 ## How it works
 
-- A `CGEvent` tap on left-mouse-down reads the element under the cursor via
-  `AXUIElementCopyElementAtPosition`.
-- If that element is a close button (`kAXCloseButtonSubrole`, with a title/description fallback),
-  the owning process (from `AXUIElementGetPid`) is terminated after a short delay.
-- The tap re-enables itself if macOS disables it on timeout, and only starts when Accessibility
-  is granted.
+- A listen-only `CGEvent` tap observes left mouse down/up and hands the location to a background
+  queue, so the tap never blocks input. Accessibility calls have a 0.25 s timeout.
+- On mouse-down, `AXUIElementCopyElementAtPosition` finds the element under the cursor. It is a
+  candidate only if it has the `AXCloseButton` subrole (or is a button equal to its window's
+  `kAXCloseButtonAttribute`), belongs to the app's main window, the app isn't excluded (Finder,
+  QuickShare-Mac), and that is the app's only window.
+- On mouse-up, the app's windows are polled for up to 1.5 s. Once it has no windows left — counted
+  via the Accessibility windows list plus `CGWindowListCopyWindowInfo` for windows on other Spaces
+  (using private SkyLight calls to skip hidden, ordered-out windows; AX only if unavailable) —
+  the app is sent `terminate()`. If the window is still there, nothing happens.
+- Accessibility trust is re-checked every 2 s; the tap starts/stops accordingly and is recreated if
+  macOS invalidates it.
+
+### Known limitations
+
+- A close that completes later than 1.5 s after the click (e.g. after answering a "Save?" sheet)
+  leaves the app running.
+- Minimized windows on another Space may not be counted.
 
 ## Project layout
 

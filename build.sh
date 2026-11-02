@@ -27,28 +27,18 @@ BINARIES=()
 for ARCH in arm64 x86_64; do
     OUT="$BUILD_DIR/$APP_NAME-$ARCH"
     echo "Compiling ${#SOURCES[@]} Swift files for $ARCH-apple-macos$MIN_MACOS ($MODE)…"
-    if swiftc -swift-version 6 -sdk "$SDK" -target "$ARCH-apple-macos$MIN_MACOS" "${OPTIMIZATION[@]}" \
-        "${SOURCES[@]}" -o "$OUT" -framework AppKit -framework ApplicationServices; then
-        BINARIES+=("$OUT")
-    else
-        echo "warning: skipping $ARCH (toolchain cannot target it)" >&2
-    fi
+    swiftc -swift-version 6 -sdk "$SDK" -target "$ARCH-apple-macos$MIN_MACOS" "${OPTIMIZATION[@]}" \
+        "${SOURCES[@]}" -o "$OUT" -framework AppKit -framework ApplicationServices
+    BINARIES+=("$OUT")
 done
-
-if [ "${#BINARIES[@]}" -eq 0 ]; then
-    echo "error: no architectures built" >&2
-    exit 1
-fi
 
 lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/$APP_NAME"
 rm -f "${BINARIES[@]}"
 
-find "$APP" -name '*.dSYM' -type d -prune -exec rm -rf {} + 2>/dev/null || true
-
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+codesign --force --sign - "$APP"
 
 touch "$BUILD_DIR/.metadata_never_index"
 echo "Built $APP"
