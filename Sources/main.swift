@@ -12,14 +12,20 @@ private let excludedBundleIDs: Set<String> = [
 
 // Private SkyLight calls, resolved at runtime, used only to tell windows that
 // live on another Space (which the Accessibility API does not list) apart from
-// hidden, ordered-out windows. If they are unavailable we fall back to AX only.
+// hidden windows. Some apps (e.g. Activity Monitor) keep a closed window around
+// ordered-out but still assigned to the current Space, so only windows on a
+// Space that no display is showing count. If any call is unavailable we fall
+// back to AX only.
 private typealias CGSMainConnectionIDFn = @convention(c) () -> Int32
 private typealias CGSCopySpacesForWindowsFn = @convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?
+private typealias CGSCopyManagedDisplaySpacesFn = @convention(c) (Int32) -> Unmanaged<CFArray>?
 private let skyLight = dlopen(nil, RTLD_NOW)
 private let cgsMainConnectionID = dlsym(skyLight, "CGSMainConnectionID")
     .map { unsafeBitCast($0, to: CGSMainConnectionIDFn.self) }
 private let cgsCopySpacesForWindows = dlsym(skyLight, "CGSCopySpacesForWindows")
     .map { unsafeBitCast($0, to: CGSCopySpacesForWindowsFn.self) }
+private let cgsCopyManagedDisplaySpaces = dlsym(skyLight, "CGSCopyManagedDisplaySpaces")
+    .map { unsafeBitCast($0, to: CGSCopyManagedDisplaySpacesFn.self) }
 private let allSpacesMask: Int32 = 7
 
 /// Watches clicks and quits an app once the click on its close button has
@@ -151,13 +157,19 @@ final class CloseDetector: @unchecked Sendable {
         return nil
     }
 
-    /// Standard-layer windows of `pid` that are not on the current screen but
-    /// belong to some Space (i.e. open on another desktop, not merely hidden).
+    /// Standard-layer windows of `pid` that are open on a Space no display is
+    /// currently showing (i.e. on another desktop, not merely hidden).
     private static func spaceBoundWindowCount(for pid: pid_t) -> Int {
         guard let mainConnection = cgsMainConnectionID, let spacesFor = cgsCopySpacesForWindows,
+              let displaySpaces = cgsCopyManagedDisplaySpaces else { return 0 }
+        let connection = mainConnection()
+        guard let displays = displaySpaces(connection)?.takeRetainedValue() as? [[String: Any]],
               let list = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return 0 }
-        let connection = mainConnection()
+        let visibleSpaces = Set(displays.compactMap {
+            ($0["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int
+        })
+        guard !visibleSpaces.isEmpty else { return 0 }
         return list.reduce(0) { count, info in
             guard info[kCGWindowOwnerPID as String] as? pid_t == pid,
                   info[kCGWindowLayer as String] as? Int == 0,
@@ -166,8 +178,8 @@ final class CloseDetector: @unchecked Sendable {
                   let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
                   bounds["Width"] ?? 0 >= 50, bounds["Height"] ?? 0 >= 50,
                   let number = info[kCGWindowNumber as String] as? NSNumber,
-                  let spaces = spacesFor(connection, allSpacesMask, [number] as CFArray)?.takeRetainedValue() as? [Any],
-                  !spaces.isEmpty else { return count }
+                  let spaces = spacesFor(connection, allSpacesMask, [number] as CFArray)?.takeRetainedValue() as? [Int],
+                  !spaces.isEmpty, visibleSpaces.isDisjoint(with: spaces) else { return count }
             return count + 1
         }
     }
@@ -202,8 +214,11 @@ final class EventTap: @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
 
-        // Listen-only: we never modify events, so input is never held up by us.
-        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
+        // An active tap (not .listenOnly): listen-only taps need the separate
+        // Input Monitoring permission and silently receive nothing without it.
+        // The callback only hands off to the detector's queue, so it returns
+        // immediately and never holds up input.
+        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
                                            eventsOfInterest: mask, callback: callback,
                                            userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return }
         self.port = port

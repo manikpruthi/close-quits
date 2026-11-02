@@ -16,7 +16,7 @@ just closing its window — because the minimize (yellow) button already exists 
   never treated as a quit.
 - **Spaces-aware** — windows open on other desktops count, so an app is not quit while it still has
   a window on another Space.
-- **System-wide, zero input lag** — a listen-only event tap feeds a background Accessibility check,
+- **System-wide, zero input lag** — the event tap only hands clicks to a background Accessibility check,
   so clicks are never delayed, even when the app under the cursor is hung.
 - **Menu-bar only** — runs as an `LSUIElement` with no Dock icon and a negligible footprint.
 - **Enable/disable** — toggle the behavior from the menu bar icon at any time.
@@ -84,7 +84,7 @@ quit-on-close is not active (disabled or no Accessibility access).
 
 ## How it works
 
-- A listen-only `CGEvent` tap observes left mouse down/up and hands the location to a background
+- A `CGEvent` tap (active, which needs only Accessibility — listen-only taps would also need Input Monitoring) observes left mouse down/up and hands the location to a background
   queue, so the tap never blocks input. Accessibility calls have a 0.25 s timeout.
 - On mouse-down, `AXUIElementCopyElementAtPosition` finds the element under the cursor. It is a
   candidate only if it has the `AXCloseButton` subrole (or is a button equal to its window's
@@ -92,7 +92,8 @@ quit-on-close is not active (disabled or no Accessibility access).
   QuickShare-Mac), and that is the app's only window.
 - On mouse-up, the app's windows are polled for up to 1.5 s. Once it has no windows left — counted
   via the Accessibility windows list plus `CGWindowListCopyWindowInfo` for windows on other Spaces
-  (using private SkyLight calls to skip hidden, ordered-out windows; AX only if unavailable) —
+  (using private SkyLight calls to count only windows on a Space no display is showing, so hidden
+  windows that apps like Activity Monitor keep after closing are ignored; AX only if unavailable) —
   the app is sent `terminate()`. If the window is still there, nothing happens.
 - Accessibility trust is re-checked every 2 s; the tap starts/stops accordingly and is recreated if
   macOS invalidates it.
