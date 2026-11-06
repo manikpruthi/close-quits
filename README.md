@@ -21,6 +21,9 @@ just closing its window — because the minimize (yellow) button already exists 
   never treated as a quit.
 - **Spaces-aware** — windows open on other desktops count, so an app is not quit while it still has
   a window on another Space.
+- **Any display, full screen too** — works the same on the built-in display, extended displays
+  (wherever they are arranged, including left of or above the main one) and Sidecar, in normal
+  windows and in full screen.
 - **System-wide, zero input lag** — the event tap only hands clicks to a background Accessibility check,
   so clicks are never delayed, even when the app under the cursor is hung.
 - **Menu-bar only** — runs as an `LSUIElement` with no Dock icon and a negligible footprint.
@@ -98,7 +101,12 @@ quit-on-close is not active (disabled or no Accessibility access).
 - On mouse-up, the app's windows are polled for up to 1.5 s. A window counts as open if it is on
   screen over a display, minimized (AX `kAXMinimizedAttribute`), or on a Space no display is
   showing (`CGWindowListCopyWindowInfo` plus private SkyLight calls; without them only the first
-  two count). Hidden windows that apps keep after "closing" them — ordered out or parked
+  two count). A window lying entirely inside another on-screen window of the same app is counted
+  as part of it: in full screen the title bar/toolbar strip that slides down when the pointer
+  reaches the top of the display (always showing when its × is clicked) is a separate window, as
+  is a sheet. All positions — the click, the AX hit-test, CG window bounds and `CGDisplayBounds` —
+  are in the same global display coordinates, so displays at negative coordinates need no special
+  handling. Hidden windows that apps keep after "closing" them — ordered out or parked
   off-screen, as Activity Monitor does — are ignored even if the app still lists them over AX.
   With Stage Manager on, such hidden windows still show as thumbnails in the strip (CG reports the
   app's window at the thumbnail's frame, under a matching `WindowManager` frame); a strip window
@@ -132,6 +140,9 @@ quit-on-close is not active (disabled or no Accessibility access).
 - A close that completes later than 1.5 s after the click (e.g. after answering a "Save?" sheet)
   leaves the app running.
 - Minimized windows on another Space may not be counted.
+- A separate window placed entirely inside another window of the same app is counted together
+  with it, so closing the outer one is treated as a possible last-window close; the app is still
+  only quit if the inner window is gone too.
 - An app that takes longer than 5 s to quit with no window showing (e.g. a long silent save on
   quit) is force-quit.
 - Agents launchd runs on its own (installed to `~/Library/LaunchAgents` or `/Library`) are not in

@@ -385,6 +385,7 @@ final class CloseDetector: @unchecked Sendable {
             })
         }
 
+        var visibleFrames: [CGRect] = []
         for info in list {
             guard info[kCGWindowOwnerPID as String] as? pid_t == pid,
                   info[kCGWindowLayer as String] as? Int == 0,
@@ -397,7 +398,7 @@ final class CloseDetector: @unchecked Sendable {
                 if stripFrames.contains(where: { $0.equalTo(bounds) }) {
                     counts.stageStrip += 1
                 } else if displayBounds.contains(where: { $0.intersects(bounds) }) {
-                    counts.visible += 1
+                    visibleFrames.append(bounds)
                 }
                 continue
             }
@@ -407,6 +408,17 @@ final class CloseDetector: @unchecked Sendable {
                   !spaces.isEmpty, visibleSpaces.isDisjoint(with: spaces) else { continue }
             counts.otherSpace += 1
         }
+
+        // A window lying entirely inside another on-screen window of the same
+        // app is part of it, not a window of its own: a full-screen window's
+        // title bar/toolbar strip (shown while the pointer is at the top, so
+        // always there when its close button is clicked) is a separate CG
+        // window, as is a sheet. Identical frames count once.
+        counts.visible = visibleFrames.enumerated().filter { index, frame in
+            !visibleFrames.enumerated().contains { other, outer in
+                other != index && outer.contains(frame) && (outer != frame || other < index)
+            }
+        }.count
         return counts
     }
 }
