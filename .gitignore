@@ -15,3 +15,7 @@ npm-debug.log*
 # Editor
 .vscode/
 .idea/
+
+# /brag launch-video output
+brag-output/
+brag-output-*/
